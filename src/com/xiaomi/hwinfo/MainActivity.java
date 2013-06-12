@@ -1,7 +1,6 @@
 package com.xiaomi.hwinfo;
 
 import java.util.ArrayList;
-
 import com.stericson.RootTools.RootTools;
 import com.stericson.RootTools.execution.Command;
 import com.stericson.RootTools.execution.CommandCapture;
@@ -10,7 +9,6 @@ import android.os.Bundle;
 import android.app.Activity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
@@ -19,6 +17,18 @@ public class MainActivity extends Activity {
 		System.loadLibrary("hwinfo");
 	}
 	private native void getHwInfo(HWInfo hwinfo);
+	private native void getABootInfo(ABootDeviceInfo abootinfo);
+	
+	private void gainAbootAccess() {
+		CommandCapture command = new CommandCapture(0,
+				"busybox chmod 0777 /dev/block/platform/msm_sdcc.1/by-name/aboot");
+
+		try {
+			RootTools.getShell(true).add(command).waitForFinish();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 	
 	private String fileGetContents(String file) {
 		final StringBuilder sb = new StringBuilder();
@@ -44,7 +54,6 @@ public class MainActivity extends Activity {
 	private String getInputDevices() {
 		final ArrayList<Device> devices = new ArrayList<Device>();
 		
-//		Command command = new Command(0, "busybox ls -tr /sys/devices/i2c*/*/input/*/name")
 		Command command = new Command(0, "busybox find /sys/devices/i2c*/*/*/ -name name")
 		{
 		        @Override
@@ -89,13 +98,27 @@ public class MainActivity extends Activity {
 		setContentView(R.layout.activity_main);
 		labelText = (TextView)findViewById(R.id.text);
 		
+		gainAbootAccess();
 		updateUI();
 	}
 
 	private void updateUI() {
 		HWInfo hwinfo = new HWInfo();
 		getHwInfo(hwinfo);
-		labelText.setText(hwinfo.toString()+"\n"+getInputDevices()+"\n"+"SystemType: "+fileGetContents("/sys/devices/system/soc/soc0/hw_platform")+"\n");
+		
+		ABootDeviceInfo abootinfo = new ABootDeviceInfo();
+		getABootInfo(abootinfo);
+		
+		StringBuilder sb = new StringBuilder();
+		sb.append(hwinfo.toString()+"\n");
+		sb.append(getInputDevices()+"\n");
+		sb.append("SystemType: "+fileGetContents("/sys/devices/system/soc/soc0/hw_platform")+"\n");
+		sb.append("\nAbootInfo:\n");
+		sb.append("magic: "+abootinfo.magic+"\n");
+		sb.append("is_tampered: "+abootinfo.is_tampered+"\n");
+		sb.append("is_unlocked: "+abootinfo.is_unlocked+"\n");
+		
+		labelText.setText(sb);
 	}
 
 	public void onClickHandler(View v) {

@@ -1,6 +1,93 @@
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include "devinfo.h"
+
+#define INVALID_PTN -1
+#define PARTITION_ABOOT "/dev/block/platform/msm_sdcc.1/by-name/aboot"
+
+int fsize(FILE *fp){
+    int prev=ftell(fp);
+    fseek(fp, 0L, SEEK_END);
+    int sz=ftell(fp);
+    fseek(fp,prev,SEEK_SET);
+    return sz;
+}
+
+unsigned char info_buf[4096];
+void write_device_info_mmc(device_info *dev)
+{
+	struct device_info *info = (device_info*) info_buf;
+	unsigned long long ptn = 0;
+	unsigned long long size;
+	int index = INVALID_PTN;
+
+	// open aboot-partition
+	FILE* aboot = fopen(PARTITION_ABOOT, "wb");
+	if (aboot == NULL) {
+		printf("Error opening aboot partition.\n");
+		return;
+	}
+
+	size = fsize(aboot);
+
+	memcpy(info, dev, sizeof(device_info));
+
+	fseek(aboot, size - 512, SEEK_SET);
+	if(fwrite((void *)info_buf, 1, 512, aboot)!=512) {
+		printf("ERROR: Cannot write device info\n");
+		return;
+	}
+
+	fclose(aboot);
+}
+
+void read_device_info_mmc(device_info *dev)
+{
+	struct device_info *info = (device_info*) info_buf;
+	unsigned long long ptn = 0;
+	unsigned long long size;
+	int index = INVALID_PTN;
+
+	// open aboot-partition
+	FILE* aboot = fopen(PARTITION_ABOOT, "rb");
+	if (aboot == NULL) {
+		printf("Error opening aboot partition.\n");
+		return;
+	}
+
+	size = fsize(aboot);
+
+	fseek(aboot, size - 512, SEEK_SET);
+	if(fgets((char *)info_buf, 512, aboot)==NULL) {
+		printf("ERROR: Cannot read device info\n");
+		return;
+	}
+
+	memcpy(dev, info, sizeof(device_info));
+
+	fclose(aboot);
+}
+
+extern "C" void Java_com_xiaomi_hwinfo_MainActivity_getABootInfo(
+		JNIEnv * env, jobject thiz, jobject jabootinfo) {
+
+	// get object fields
+	jclass clazzABootInfo = env->GetObjectClass(jabootinfo);
+	jfieldID fieldID_magic = env->GetFieldID(clazzABootInfo, "magic", "Ljava/lang/String;");
+	jfieldID fieldID_is_unlocked = env->GetFieldID(clazzABootInfo, "is_unlocked", "Z");
+	jfieldID fieldID_is_tampered = env->GetFieldID(clazzABootInfo, "is_tampered", "Z");
+
+	// read aboot data
+	device_info device = {DEVICE_MAGIC, 0, 0};
+	read_device_info_mmc(&device);
+
+	// copy data to java object
+	if(fieldID_magic!=NULL) env->SetObjectField(jabootinfo, fieldID_magic, env->NewStringUTF((char*)device.magic));
+	if(fieldID_is_unlocked!=NULL) env->SetBooleanField(jabootinfo, fieldID_is_unlocked, device.is_unlocked);
+	if(fieldID_is_tampered!=NULL) env->SetBooleanField(jabootinfo, fieldID_is_tampered, device.is_tampered);
+}
 
 typedef struct {
 	unsigned int touch_info:4;
